@@ -14,51 +14,44 @@ const getAllFiles = (root, files) => {
   });
   return files;
 }
-const ruleTest = (o,rule) => {
+const regexp_safe = (rule) => {
   let rexp = (typeof rule === 'string') ? rule.match(/^(\W)(.+)\1$/) : null;
-  if( rexp !== null )  rule = rexp[2];
-  return (typeof rule === 'string') ? (new RegExp(rule)).test(o) : rule.test(o);
+  retrun (rexp !== null) ? new RegExp(rexp[2]) : rule;
 }
-const isMatch = (o,pos,neg) => {
-  // `and` operand, default
-  let flags = new Set();
+const isMatch = (o,pos,neg,flags = []) => {  // `and` operand, default
   for(let rule of pos)
-    flags.add(  ruleTest(o,rule) );
+    flags.push(  rule.test(o) );
   for(let rule of neg)
-    flags.add( !ruleTest(o,rule) );
-  return !flags.has(false);
+    flags.push( !rule.test(o) );
+  return !flags.includes(false);
 }
-const essentialFiles = (files, callback, irules, xrules) => files.filter( (file)=>isMatch(file,irules,xrules) );
-//const essentialFiles = (files, irules, xrules) => files.filter( (file)=>isMatch(file.map((e)=>e.match(/^(.+)\/.+?$/)),irules,xrules) );
-const expressions = (expr,args={},last='') => {
+const essentialFiles = (files, irules, xrules) => files.filter( (file)=>isMatch(file,irules,xrules) );
+const expressions = (args,expr,last) => {
     for(let ex of expr){
         if( /^\-/.test(ex) && operands(last) ){
           delete args[last];
-          args = {"${last} ${ex}":''};
-          last = "${last} ${ex}";
-        //} else if ( /^\-/.test(ex) && commands(last) ) {
+          last = `${last} ${ex}`;
+          ex = '';
         } else if ( /^\-/.test(ex) ) {
-          args[ex] = '';
           last = ex;
-        } else { // please accept multiple `-iname`s
-          args[last] = ex;
+          ex = '';
         }
+        // please accept multiple `-iname`s
+        if(last.length == 0)  console.log("Review the command.");
+        else  args[last] = ex;
     }
-    args.irules = makerules([],args,(e)=>/^(\-name|\-iname|\-regex|\-iregex)$/.test(e));
-    args.xrules = makerules([],args,(e)=>/^\-not (\-name|\-iname|\-regex|\-iregex)$/.test(e));
+    args.irules = makerules([],args,Object.keys(args).filter( (e)=>/^(\-i?name|\-i?regex)$/.test(e) ));
+    args.xrules = makerules([],args,Object.keys(args).filter( (e)=>/^\-not (\-i?name|\-i?regex)$/.test(e) ));
     return args;
 }
-const makerules = (rules,ruble,callback) => {
-  let rulekeys = Object.keys(ruble).filter(callback);
+const makerules = (rules,ruble,rulekeys) => {
   for(let rulekey of rulekeys){
-      if( /\-name/.test(rulekey) ){
-        rules.push( new RegExp(ruble[rulekey].replace(/\*/g,".*")) );
-      } else if ( /\-iname/.test(rulekey) ){
-        rules.push( new RegExp(ruble[rulekey].replace(/\*/g,".*"),"i") );
-      } else if (/\-regex/.test(rulekey)) {
-        rules.push(            ruble[rulekey]      );
-      } else if (/\-iregex/.test(rulekey)) {
-        rules.push( new RegExp(ruble[rulekey],"i") );
+      let rexp = (typeof ruble[rulekey] === 'string') ? ruble[rulekey].match(/^(\W)(.+)\1$/) : null;  // wildcard '*' is also trimmed, if enclosing
+      let rule = (rexp !== null) ? rexp[2] : ruble[rulekey];
+            if ( /\-i?name/.test(rulekey) || /\-not\s+\-i?name/.test(rulekey) ){
+        rules.push( new RegExp(rule.replace(/\*/g,".$1"),/\-i/.test(rulekey) ? "i" : "") );
+      } else if ( /\-i?regex/.test(rulekey) || /\-not\s+\-i?regex/.test(rulekey) ) {
+        rules.push( new RegExp(rule                     ,/\-i/.test(rulekey) ? "i" : "") );
       }
   }
   return rules;
@@ -68,7 +61,7 @@ const commands = (e) => /^(\-print0?|\-ls|\-empty|\-true|\-false|\-delete)$/.tes
 
 let roots = [pc.argv[2]];
 let files = [];
-let args = expressions(pc.argv.slice(3));
+let args = expressions({},pc.argv.slice(3),'');
 console.log(args);
 
   for(let root of roots)

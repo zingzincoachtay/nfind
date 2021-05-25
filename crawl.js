@@ -28,17 +28,21 @@ const isMatch = (o,pos,neg,flags = []) => {  // `and` operand, default
 const essentialFiles = (files, irules, xrules) => files.filter( (file)=>isMatch(file,irules,xrules) );
 const expressions = (args,expr,last) => {
     for(let ex of expr){
-        if( /^\-/.test(ex) && operands(last) ){
+        if( typeof args[ex] !== 'undefined' && !operands(last) ){
+          // allow repeat of '-iname's, but avoids merging '-iname' and '-not -iname'
+          last = ex;
+        } else if ( /^\-/.test(ex) && operands(last) ){
           delete args[last];
           last = `${last} ${ex}`;
-          ex = '';
+          args[last] = [];
         } else if ( /^\-/.test(ex) ) {
           last = ex;
-          ex = '';
+          args[last] = [];
+        } else {
+          args[last].push( ex );
         }
         // please accept multiple `-iname`s
         if(last.length == 0)  console.log("Review the command.");
-        else  args[last] = ex;
     }
     args.irules = makerules([],args,Object.keys(args).filter( (e)=>/^(\-i?name|\-i?regex)$/.test(e) ));
     args.xrules = makerules([],args,Object.keys(args).filter( (e)=>/^\-not (\-i?name|\-i?regex)$/.test(e) ));
@@ -46,13 +50,14 @@ const expressions = (args,expr,last) => {
 }
 const makerules = (rules,ruble,rulekeys) => {
   for(let rulekey of rulekeys){
-      let rexp = (typeof ruble[rulekey] === 'string') ? ruble[rulekey].match(/^(\W)(.+)\1$/) : null;  // wildcard '*' is also trimmed, if enclosing
-      let rule = (rexp !== null) ? rexp[2] : ruble[rulekey];
+      let rexp = ruble[rulekey].map( (e)=>(typeof e === 'string') ? e.match(/^(\W)(.+)\1$/) : null );  // wildcard '*' is also trimmed, if enclosing
+      let rule = rexp.map( (re,i)=>(re !== null) ? re[2] : ruble[rulekey][i] );
+      let patterns = rule.map( (r)=>(new RegExp(r                     ,/\-i/.test(rulekey) ? "i" : "")) );
             if ( /\-i?name/.test(rulekey) || /\-not\s+\-i?name/.test(rulekey) ){
-        rules.push( new RegExp(rule.replace(/\*/g,".$1"),/\-i/.test(rulekey) ? "i" : "") );
-      } else if ( /\-i?regex/.test(rulekey) || /\-not\s+\-i?regex/.test(rulekey) ) {
-        rules.push( new RegExp(rule                     ,/\-i/.test(rulekey) ? "i" : "") );
-      }
+              patterns = rule.map( (r)=>(new RegExp(r.replace(/\*/g,".$1"),/\-i/.test(rulekey) ? "i" : "")) );
+      //} else if ( /\-i?regex/.test(rulekey) || /\-not\s+\-i?regex/.test(rulekey) ) {
+            }
+      rules.push( ...patterns );
   }
   return rules;
 }
@@ -69,4 +74,4 @@ console.log(args);
 
 console.log("N(Found): "+files.length);
 
-console.log( essentialFiles( (args["-type"] == "f") ? files : files.filter( (e)=>fs.statSync(e).isDirectory() ),args.irules,args.xrules) );
+console.log( essentialFiles( (args["-type"][0] == "f") ? files : files.filter( (e)=>fs.statSync(e).isDirectory() ),args.irules,args.xrules) );
